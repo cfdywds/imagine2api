@@ -70,7 +70,13 @@ app.add_middleware(
 # 确保图片目录存在
 settings.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-# 静态文件服务 (图片缓存)
+# 静态文件服务
+from pathlib import Path
+STATIC_DIR = Path(__file__).parent / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+
+# 挂载静态文件
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/images", StaticFiles(directory=str(settings.IMAGES_DIR)), name="images")
 
 # 注册路由
@@ -79,9 +85,26 @@ app.include_router(imagine_router, prefix="/v1", tags=["Images"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """服务信息"""
+    """前端页面"""
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return index_file.read_text(encoding='utf-8')
+    return """
+    <html>
+        <body>
+            <h1>Grok Imagine API Gateway</h1>
+            <p>前端页面未找到，请确保 static/index.html 存在</p>
+            <p><a href="/docs">API 文档</a></p>
+        </body>
+    </html>
+    """
+
+
+@app.get("/api")
+async def api_info():
+    """API 服务信息"""
     return {
         "service": "Grok Imagine API Gateway",
         "version": "2.0.0",

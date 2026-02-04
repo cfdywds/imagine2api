@@ -78,9 +78,21 @@ class GrokImagineClient:
         if proxy_url:
             logger.info(f"[Grok] 使用代理: {proxy_url}")
             # 支持 http/https/socks4/socks5 代理
-            return ProxyConnector.from_url(proxy_url, ssl=self._ssl_context)
+            # 增加连接超时时间
+            return ProxyConnector.from_url(
+                proxy_url,
+                ssl=self._ssl_context,
+                limit=100,
+                limit_per_host=30,
+                ttl_dns_cache=300
+            )
 
-        return aiohttp.TCPConnector(ssl=self._ssl_context)
+        return aiohttp.TCPConnector(
+            ssl=self._ssl_context,
+            limit=100,
+            limit_per_host=30,
+            ttl_dns_cache=300
+        )
 
     def _get_ws_headers(self, sso: str) -> Dict[str, str]:
         """构建 WebSocket 请求头"""
@@ -198,6 +210,221 @@ class GrokImagineClient:
 
         return last_error or {"success": False, "error": "所有重试都失败了"}
 
+    async def generate_image_to_image(
+        self,
+        prompt: str,
+        image_base64: str,
+        aspect_ratio: str = "1:1",
+        mode: str = "style_transfer",
+        strength: float = 0.8,
+        enable_nsfw: bool = True,
+        sso: Optional[str] = None,
+        max_retries: int = 5
+    ) -> Dict[str, Any]:
+        """
+        图生图功能
+
+        Args:
+            prompt: 文本提示词
+            image_base64: base64 编码的图片
+            aspect_ratio: 宽高比
+            mode: 生成模式（style_transfer/upscale/inpainting）
+            strength: 变化强度 (0-1)
+            enable_nsfw: 是否启用 NSFW
+            sso: 指定 SSO，否则从池中获取
+            max_retries: 最大重试次数
+
+        Returns:
+            生成结果，包含图片 URL 列表
+        """
+        last_error = None
+
+        for attempt in range(max_retries):
+            current_sso = sso if sso else await sso_manager.get_next_sso()
+
+            if not current_sso:
+                return {"success": False, "error": "没有可用的 SSO"}
+
+            try:
+                result = await self._do_generate_image_to_image(
+                    sso=current_sso,
+                    prompt=prompt,
+                    image_base64=image_base64,
+                    aspect_ratio=aspect_ratio,
+                    mode=mode,
+                    strength=strength,
+                    enable_nsfw=enable_nsfw
+                )
+
+                if result.get("success"):
+                    await sso_manager.mark_success(current_sso)
+                    if hasattr(sso_manager, 'record_usage'):
+                        await sso_manager.record_usage(current_sso)
+                    return result
+
+                error_code = result.get("error_code", "")
+
+                if error_code in ["rate_limit_exceeded", "unauthorized"]:
+                    await sso_manager.mark_failed(current_sso, result.get("error", ""))
+                    last_error = result
+                    if sso:
+                        return result
+                    logger.info(f"[Grok] 图生图尝试 {attempt + 1}/{max_retries} 失败，切换 SSO...")
+                    continue
+                else:
+                    return result
+
+            except Exception as e:
+                logger.error(f"[Grok] 图生图失败: {e}")
+                await sso_manager.mark_failed(current_sso, str(e))
+                last_error = {"success": False, "error": str(e)}
+                if sso:
+                    return last_error
+                continue
+
+        return last_error or {"success": False, "error": "所有重试都失败了"}
+
+    async def _do_generate_image_to_image(
+        self,
+        sso: str,
+        prompt: str,
+        image_base64: str,
+        aspect_ratio: str,
+        mode: str,
+        strength: float,
+        enable_nsfw: bool
+    ) -> Dict[str, Any]:
+        """执行图生图"""
+        request_id = str(uuid.uuid4())
+        headers = self._get_ws_headers(sso)
+
+        logger.info(f"[Grok] 图生图请求: {prompt[:50]}... mode={mode}")
+
+        connector = self._get_connector()
+
+        try:
+            timeout = aiohttp.ClientTimeout(
+                total=None,
+                connect=90,
+                sock_connect=90,
+                sock_read=None
+            )
+
+            async with aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                async with session.ws_connect(
+                    settings.GROK_WS_URL,
+                    headers=headers,
+                    heartbeat=20,
+                    receive_timeout=None,
+                    autoclose=False,
+                    autoping=True
+                ) as ws:
+                    # 构建图生图消息（使用测试成功的格式）
+                    message = {
+                        "type": "conversation.item.create",
+                        "timestamp": int(time.time() * 1000),
+                        "item": {
+                            "type": "message",
+                            "content": [{
+                                "requestId": request_id,
+                                "text": prompt,
+                                "type": "input_image",  # 关键：使用 input_image 类型
+                                "image": f"data:image/jpeg;base64,{image_base64}",  # 带前缀的 base64
+                                "properties": {
+                                    "section_count": 0,
+                                    "is_kids_mode": False,
+                                    "enable_nsfw": enable_nsfw,
+                                    "skip_upsampler": False,
+                                    "is_initial": False,
+                                    "aspect_ratio": aspect_ratio
+                                    # 注意：不包含 mode 和 strength，因为 Grok 可能不支持
+                                }
+                            }]
+                        }
+                    }
+
+                    await ws.send_json(message)
+                    logger.info(f"[Grok] 已发送图生图请求")
+
+                    # 使用与文本生成图片相同的接收逻辑
+                    progress = GenerationProgress(total=1)  # 图生图通常只生成1张
+                    start_time = time.time()
+
+                    while time.time() - start_time < settings.GENERATION_TIMEOUT:
+                        try:
+                            ws_msg = await asyncio.wait_for(ws.receive(), timeout=5.0)
+
+                            if ws_msg.type == aiohttp.WSMsgType.TEXT:
+                                msg = json.loads(ws_msg.data)
+                                msg_type = msg.get("type")
+
+                                # 添加详细日志
+                                logger.info(f"[Grok] 图生图收到消息: type={msg_type}")
+
+                                if msg_type == "image":
+                                    blob = msg.get("blob", "")
+                                    url = msg.get("url", "")
+
+                                    if blob and url:
+                                        image_id = self._extract_image_id(url)
+                                        if not image_id:
+                                            continue
+
+                                        blob_size = len(blob)
+                                        is_final = self._is_final_image(url, blob_size)
+
+                                        if is_final:
+                                            # 保存图片
+                                            saved_url = await self._save_image(blob, image_id)
+                                            logger.info(f"[Grok] 图生图完成: {saved_url}")
+
+                                            return {
+                                                "success": True,
+                                                "urls": [saved_url],
+                                                "duration": time.time() - start_time
+                                            }
+
+                                elif msg_type == "error":
+                                    # Grok 返回的错误格式: {"type": "error", "err_code": "...", "err_msg": "..."}
+                                    err_code = msg.get("err_code", "unknown")
+                                    err_msg = msg.get("err_msg") or msg.get("message", "未知错误")
+
+                                    # 打印完整的错误消息
+                                    logger.error(f"[Grok] 图生图错误: {err_msg}")
+                                    logger.error(f"[Grok] 完整错误消息: {json.dumps(msg, ensure_ascii=False)}")
+
+                                    # 提供更有帮助的错误信息
+                                    if err_code == "invalid_argument":
+                                        error_msg = f"Grok 拒绝请求 ({err_msg})。可能原因: 1) 账号需要 Premium 订阅才能使用图生图功能 2) 图片格式或大小不符合要求"
+                                    else:
+                                        error_msg = f"{err_msg} (错误代码: {err_code})"
+
+                                    return {
+                                        "success": False,
+                                        "error": error_msg,
+                                        "error_code": err_code
+                                    }
+
+                        except asyncio.TimeoutError:
+                            continue
+
+                    return {
+                        "success": False,
+                        "error": "图生图超时",
+                        "error_code": "timeout"
+                    }
+
+        except Exception as e:
+            logger.error(f"[Grok] 图生图异常: {e}")
+            return {
+                "success": False,
+                "error": f"连接失败: {str(e)}",
+                "error_code": "connection_error"
+            }
+
     async def _do_generate(
         self,
         sso: str,
@@ -216,12 +443,26 @@ class GrokImagineClient:
         connector = self._get_connector()
 
         try:
-            async with aiohttp.ClientSession(connector=connector) as session:
+            # 设置更长的超时时间
+            timeout = aiohttp.ClientTimeout(
+                total=None,  # 不限制总时间
+                connect=90,  # 连接超时 90 秒
+                sock_connect=90,  # Socket 连接超时 90 秒
+                sock_read=None  # 读取不超时
+            )
+
+            async with aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                logger.info(f"[Grok] 正在连接 WebSocket (超时: 90s)...")
                 async with session.ws_connect(
                     settings.GROK_WS_URL,
                     headers=headers,
                     heartbeat=20,
-                    receive_timeout=settings.GENERATION_TIMEOUT
+                    receive_timeout=None,  # 不限制接收超时
+                    autoclose=False,
+                    autoping=True
                 ) as ws:
                     # 发送生成请求
                     message = {
