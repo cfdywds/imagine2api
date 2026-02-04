@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     SSO_ROTATION_STRATEGY: str = "hybrid"  # 轮询策略: round_robin/least_used/least_recent/weighted/hybrid
     SSO_DAILY_LIMIT: int = 10  # 每个 key 每24小时限制次数
 
+    # 中转站配置（新增）
+    RELAY_ENABLED: bool = False  # 是否启用中转站模式
+    RELAY_BASE_URL: str = ""  # 中转站 API 地址（如：https://api.yexc.top/v1）
+    RELAY_API_KEY: str = ""  # 中转站 API Key
+    RELAY_CHAT_MODEL: str = "grok-4-fast"  # Chat 默认模型
+    RELAY_IMAGE_MODEL: str = "grok-imagine-0.9"  # 图片生成默认模型
+
     def get_base_url(self) -> str:
         """获取图片的基础 URL，如果未设置则根据 HOST:PORT 自动生成"""
         if self.BASE_URL:
@@ -130,6 +137,12 @@ GENERATION_TIMEOUT=120
 # SSO_ROTATION_STRATEGY=hybrid
 # 每个 key 每24小时限制调用次数
 # SSO_DAILY_LIMIT=10
+
+# ============ 中转站配置 ============
+# 启用中转站模式后，将通过中转站 API 调用，而不是直接使用 Grok SSO
+# RELAY_ENABLED=true
+# RELAY_BASE_URL=https://api.yexc.top/v1
+# RELAY_API_KEY=your-relay-api-key
 """
         ENV_FILE_PATH.write_text(default_env, encoding="utf-8")
 

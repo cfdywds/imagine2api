@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.core.logger import logger
 from app.services.grok_client import grok_client, ImageProgress, GenerationProgress
+from app.middleware.auth import verify_api_key, get_sso_for_key
+from app.services.api_key_manager import api_key_manager
+from app.services import unified_client
 
 
 router = APIRouter()
@@ -32,36 +35,20 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = Field(4096, description="最大 token 数")
     temperature: Optional[float] = Field(1.0, description="温度")
     n: Optional[int] = Field(4, description="生成图片数量", ge=1, le=4)
+    aspect_ratio: Optional[str] = Field("2:3", description="图片宽高比")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "model": "grok-imagine",
                 "messages": [{"role": "user", "content": "画一只可爱的猫咪"}],
-                "stream": True
+                "stream": True,
+                "aspect_ratio": "2:3"
             }
         }
 
 
 # ============== 辅助函数 ==============
-
-def verify_api_key(authorization: Optional[str] = Header(None)) -> bool:
-    """验证 API 密钥"""
-    if not settings.API_KEY:
-        return True
-
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid Authorization format")
-
-    token = authorization[7:]
-    if token != settings.API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    return True
-
 
 def extract_prompt(messages: List[ChatMessage]) -> str:
     """从消息列表中提取图片生成提示词"""
@@ -116,7 +103,8 @@ async def chat_completions(
 
     用户输入要画的内容，返回流式的思考进度和最终图片 URL
     """
-    verify_api_key(authorization)
+    # 验证 API Key
+    is_valid, api_key = await verify_api_key(authorization)
 
     # 提取提示词
     prompt = extract_prompt(request.messages)
@@ -125,10 +113,48 @@ async def chat_completions(
 
     logger.info(f"[Chat] 生成请求: {prompt[:50]}... n={request.n}")
 
+    # 检查是否使用中转站模式
+    if settings.RELAY_ENABLED:
+        logger.info("[Chat] 使用中转站模式")
+
+        # 使用统一客户端（中转站模式）
+        result = await unified_client.chat_completion(
+            messages=request.messages,
+            model=request.model,
+            stream=request.stream,
+            n=request.n,
+            aspect_ratio=request.aspect_ratio
+        )
+
+        # 记录使用
+        if api_key:
+            await api_key_manager.record_usage(api_key.key)
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Chat generation failed")
+            )
+
+        # 返回中转站的响应
+        return result.get("data")
+
+    # 直连模式（原有逻辑）
+    logger.info("[Chat] 使用直连模式")
+
+    # 获取对应的 SSO Token
+    sso = await get_sso_for_key(api_key)
+
     # 流式模式
     if request.stream:
         return StreamingResponse(
-            stream_chat_generate(prompt=prompt, n=request.n),
+            stream_chat_generate(
+                prompt=prompt,
+                n=request.n,
+                aspect_ratio=request.aspect_ratio,
+                sso=sso,
+                api_key=api_key
+            ),
             media_type="text/event-stream"
         )
 
@@ -136,8 +162,14 @@ async def chat_completions(
     result = await grok_client.generate(
         prompt=prompt,
         n=request.n,
-        enable_nsfw=True
+        aspect_ratio=request.aspect_ratio,
+        enable_nsfw=True,
+        sso=sso
     )
+
+    # 记录使用
+    if api_key:
+        await api_key_manager.record_usage(api_key.key)
 
     if not result.get("success"):
         raise HTTPException(
@@ -170,7 +202,13 @@ async def chat_completions(
     }
 
 
-async def stream_chat_generate(prompt: str, n: int):
+async def stream_chat_generate(
+    prompt: str,
+    n: int,
+    aspect_ratio: str = "2:3",
+    sso: Optional[str] = None,
+    api_key = None
+):
     """
     流式生成图片，输出思考进度和最终 URL
 
@@ -203,7 +241,9 @@ async def stream_chat_generate(prompt: str, n: int):
         async for item in grok_client.generate_stream(
             prompt=prompt,
             n=n,
-            enable_nsfw=True
+            aspect_ratio=aspect_ratio,
+            enable_nsfw=True,
+            sso=sso
         ):
             if item.get("type") == "progress":
                 image_id = item["image_id"]
@@ -235,6 +275,10 @@ async def stream_chat_generate(prompt: str, n: int):
             elif item.get("type") == "result":
                 if item.get("success"):
                     final_urls = item.get("urls", [])
+
+                    # 记录使用
+                    if api_key:
+                        await api_key_manager.record_usage(api_key.key)
 
                     # 输出 100% 完成
                     yield create_chat_chunk(
