@@ -12,6 +12,7 @@ Grok 图片生成 API 代理网关，将 Grok Imagine 封装为 OpenAI 兼容的
 - **🎨 OpenAI 兼容 API** - 完全兼容 OpenAI 的 API 格式
 - **🖼️ 图片生成** - 文本生成图片 + 图生图（4 种模式）
 - **💬 Chat Completions** - 支持流式和非流式响应
+- **🌐 智能提示词翻译** ⭐ - 中文自动翻译优化为英文（新功能）
 - **🔑 API Key 管理** - 多用户支持，独立配置和限制
 - **📊 使用统计** - 详细的使用记录和监控
 
@@ -44,6 +45,11 @@ pip install -r requirements.txt
 RELAY_ENABLED=true
 RELAY_BASE_URL=https://api.yexc.top/v1
 RELAY_API_KEY=your-relay-api-key
+
+# 提示词翻译（可选）
+PROMPT_TRANSLATION_ENABLED=true
+OPENAI_API_KEY=sk-xxx
+OPENAI_MODEL=gpt-4o-mini
 
 # 服务器配置
 HOST=0.0.0.0
@@ -107,16 +113,22 @@ python main.py
 
 ### Chat Completions
 
+支持中文提示词，自动翻译为英文（需配置 OpenAI API Key）：
+
 ```bash
 curl -X POST http://localhost:9563/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer admin" \
   -d '{
     "model": "grok-4-fast",
-    "messages": [{"role": "user", "content": "画一只可爱的猫"}],
+    "messages": [{"role": "user", "content": "画一只可爱的猫咪，坐在窗台上晒太阳"}],
     "stream": false
   }'
 ```
+
+**提示词翻译示例**：
+- 输入：`画一只可爱的猫咪，坐在窗台上晒太阳`
+- 自动翻译为：`A cute cat sitting on a windowsill, basking in the sunlight, warm lighting, cozy atmosphere, high detail, photorealistic`
 
 ### 图片生成
 
@@ -180,8 +192,41 @@ curl http://localhost:9563/admin/api-keys-stats
 | `/v1/chat/completions` | POST | Chat Completions API |
 | `/v1/images/generations` | POST | 文本生成图片 |
 | `/v1/images/edit` | POST | 图生图 |
+| `/v1/prompts/translate` | POST | 翻译提示词 ⭐ |
+| `/v1/prompts/cache-stats` | GET | 缓存统计 |
+| `/v1/prompts/clear-cache` | POST | 清空缓存 |
 | `/v1/models` | GET | 列出可用模型 |
 | `/images/{filename}` | GET | 访问生成的图片 |
+
+### 提示词翻译 API（新功能）⭐
+
+```bash
+# 翻译提示词
+curl -X POST http://localhost:9563/v1/prompts/translate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin" \
+  -d '{
+    "prompt": "画一只可爱的猫咪",
+    "enhance": true
+  }'
+
+# 响应示例
+{
+  "original": "画一只可爱的猫咪",
+  "translated": "A cute cat, high detail, professional photography",
+  "language": "zh",
+  "enhanced": true,
+  "cached": false
+}
+
+# 获取缓存统计
+curl http://localhost:9563/v1/prompts/cache-stats \
+  -H "Authorization: Bearer admin"
+
+# 清空翻译缓存
+curl -X POST http://localhost:9563/v1/prompts/clear-cache \
+  -H "Authorization: Bearer admin"
+```
 
 ### 管理 API
 

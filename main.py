@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from app.api.imagine import router as imagine_router
 from app.api.chat import router as chat_router
 from app.api.admin import router as admin_router
+from app.api.prompts import router as prompts_router
 from app.core.config import settings
 from app.core.logger import logger
 from app.services.sso_manager import sso_manager
@@ -82,6 +83,7 @@ app.mount("/images", StaticFiles(directory=str(settings.IMAGES_DIR)), name="imag
 # 注册路由
 app.include_router(chat_router, prefix="/v1", tags=["Chat"])
 app.include_router(imagine_router, prefix="/v1", tags=["Images"])
+app.include_router(prompts_router, prefix="/v1", tags=["Prompts"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 
 

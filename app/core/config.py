@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     RELAY_CHAT_MODEL: str = "grok-4-fast"  # Chat 默认模型
     RELAY_IMAGE_MODEL: str = "grok-imagine-0.9"  # 图片生成默认模型
 
+    # OpenAI 配置（用于提示词翻译）
+    OPENAI_API_KEY: str = ""  # OpenAI API Key
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"  # OpenAI API 地址
+    OPENAI_MODEL: str = "gpt-4o-mini"  # 使用的模型（推荐 gpt-4o-mini）
+
+    # 提示词翻译配置
+    PROMPT_TRANSLATION_ENABLED: bool = False  # 是否启用提示词翻译
+    PROMPT_ENHANCEMENT_ENABLED: bool = True  # 是否启用提示词增强
+
     def get_base_url(self) -> str:
         """获取图片的基础 URL，如果未设置则根据 HOST:PORT 自动生成"""
         if self.BASE_URL:
@@ -143,6 +152,17 @@ GENERATION_TIMEOUT=120
 # RELAY_ENABLED=true
 # RELAY_BASE_URL=https://api.yexc.top/v1
 # RELAY_API_KEY=your-relay-api-key
+
+# ============ OpenAI 配置（提示词翻译）============
+# 用于将中文提示词自动翻译并优化为英文
+# OPENAI_API_KEY=sk-xxx
+# OPENAI_BASE_URL=https://api.openai.com/v1
+# OPENAI_MODEL=gpt-4o-mini
+
+# ============ 提示词翻译配置 ============
+# 启用后，中文提示词将自动翻译为英文
+# PROMPT_TRANSLATION_ENABLED=true
+# PROMPT_ENHANCEMENT_ENABLED=true
 """
         ENV_FILE_PATH.write_text(default_env, encoding="utf-8")
 

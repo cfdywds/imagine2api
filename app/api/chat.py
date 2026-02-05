@@ -14,6 +14,7 @@ from app.services.grok_client import grok_client, ImageProgress, GenerationProgr
 from app.middleware.auth import verify_api_key, get_sso_for_key
 from app.services.api_key_manager import api_key_manager
 from app.services import unified_client
+from app.services.prompt_translator import get_translator
 
 
 router = APIRouter()
@@ -110,6 +111,18 @@ async def chat_completions(
     prompt = extract_prompt(request.messages)
     if not prompt:
         raise HTTPException(status_code=400, detail="No prompt found in messages")
+
+    # 保存原始提示词
+    original_prompt = prompt
+
+    # 翻译提示词（如果启用）
+    translator = get_translator()
+    prompt = await translator.translate(prompt, enhance=True)
+
+    # 如果翻译后的提示词与原始不同，记录日志
+    if prompt != original_prompt:
+        logger.info(f"[Chat] 原始提示词: {original_prompt[:50]}...")
+        logger.info(f"[Chat] 翻译后提示词: {prompt[:50]}...")
 
     logger.info(f"[Chat] 生成请求: {prompt[:50]}... n={request.n}")
 
