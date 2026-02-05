@@ -1,19 +1,67 @@
-# Virtual environment
-venv/
-
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# SSO state
-sso_state.json
+# Virtual Environment
+.venv/
+venv/
+ENV/
 
-# Environment file (contains secrets)
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Environment
 .env
 
-# Null file
-nul
+# Data
+data/images/*.jpg
+data/images/*.png
+data/images/*.jpeg
+data/images/*.gif
+data/images/*.webp
 
-# Key file (contains secrets)
+# Logs
+*.log
+logs/
+
+# SSO
 key.txt
+sso_state.json
+
+# API Keys
+api_keys.json
+api_keys.json.disabled
+
+# Temporary files
+nul
+*.tmp
+*.bak
+*.swp
+*~
+
+# Documentation (generated)
+docs_cleanup_plan.txt
+
+# Test outputs
+test_output/
+*.test.log

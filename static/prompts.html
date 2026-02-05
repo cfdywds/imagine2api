@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Imagine2API - 提示词库</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .nav {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .nav a {
+            padding: 10px 20px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+
+        .nav a:hover {
+            transform: translateY(-2px);
+        }
+
+        .search-box {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+        }
+
+        .category-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+        }
+
+        .category-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .category-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .category-icon {
+            font-size: 32px;
+        }
+
+        .category-title {
+            font-size: 24px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .prompt-list {
+            list-style: none;
+        }
+
+        .prompt-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .prompt-item:hover {
+            background: #667eea;
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .prompt-item::after {
+            content: "📋";
+            position: absolute;
+            right: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .prompt-item:hover::after {
+            opacity: 1;
+        }
+
+        .copy-toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: none;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s;
+            z-index: 1000;
+        }
+
+        .copy-toast.show {
+            display: flex;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+            }
+            to {
+                transform: translateX(0);
+            }
+        }
+
+        .stats {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .categories {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 提示词库</h1>
+            <p>精选提示词模板，一键复制使用</p>
+        </div>
+
+        <div class="nav">
+            <a href="/">返回主页</a>
+            <a href="/static/guide.html">使用指南</a>
+            <a href="/docs">API 文档</a>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="totalPrompts">0</div>
+                <div class="stat-label">提示词总数</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="totalCategories">0</div>
+                <div class="stat-label">分类数量</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="copiedCount">0</div>
+                <div class="stat-label">已复制次数</div>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="🔍 搜索提示词...">
+        </div>
+
+        <div class="categories" id="categoriesContainer"></div>
+    </div>
+
+    <div class="copy-toast" id="copyToast">
+        <span style="font-size: 24px;">✓</span>
+        <span>已复制到剪贴板</span>
+    </div>
+
+    <script>
+        const promptTemplates = {
+            "动物": {
+                icon: "🐾",
+                prompts: [
+                    "一只可爱的橘猫坐在窗台上看风景",
+                    "一只威武的狼在月光下嚎叫",
+                    "一只色彩斑斓的蝴蝶停在花朵上",
+                    "一只优雅的天鹅在湖面上游动",
+                    "一只调皮的小狗在草地上玩耍",
+                    "一只雄鹰在山巅展翅翱翔",
+                    "一只熊猫在竹林中吃竹子",
+                    "一只狐狸在雪地里奔跑"
+                ]
+            },
+            "风景": {
+                icon: "🏞️",
+                prompts: [
+                    "壮丽的日落映照在平静的海面上",
+                    "雪山之巅的壮丽景色",
+                    "樱花盛开的日本庭院",
+                    "北极光下的冰岛风光",
+                    "秋天的枫叶林",
+                    "瀑布从悬崖倾泻而下",
+                    "薰衣草田在夕阳下",
+                    "沙漠中的绿洲"
+                ]
+            },
+            "城市": {
+                icon: "🏙️",
+                prompts: [
+                    "赛博朋克风格的未来城市夜景",
+                    "繁华的东京街头夜景",
+                    "古老的欧洲小镇街道",
+                    "现代化的摩天大楼群",
+                    "威尼斯的水城风光",
+                    "纽约时代广场的霓虹灯",
+                    "巴黎埃菲尔铁塔的夜景",
+                    "香港维多利亚港的天际线"
+                ]
+            },
+            "人物": {
+                icon: "👤",
+                prompts: [
+                    "一个穿着红色连衣裙的女孩在花园里",
+                    "一位老者在夕阳下钓鱼",
+                    "一个宇航员在太空中漂浮",
+                    "一位武士站在樱花树下",
+                    "一个小女孩抱着泰迪熊",
+                    "一位舞者在舞台上表演",
+                    "一个登山者站在山顶",
+                    "一位画家在创作油画"
+                ]
+            },
+            "艺术": {
+                icon: "🎨",
+                prompts: [
+                    "梵高风格的星空",
+                    "水彩画风格的山水画",
+                    "油画风格的静物",
+                    "抽象艺术风格的色彩构成",
+                    "中国水墨画风格的竹林",
+                    "印象派风格的花园",
+                    "波普艺术风格的肖像",
+                    "超现实主义风格的梦境"
+                ]
+            },
+            "科幻": {
+                icon: "🚀",
+                prompts: [
+                    "外星球上的神秘建筑",
+                    "太空站内部的未来科技",
+                    "机器人在未来城市中行走",
+                    "星际飞船穿越虫洞",
+                    "外星生物的栖息地",
+                    "赛博格战士在战斗",
+                    "悬浮的未来交通工具",
+                    "全息投影的虚拟世界"
+                ]
+            },
+            "美食": {
+                icon: "🍜",
+                prompts: [
+                    "精致的日式料理摆盘",
+                    "热气腾腾的拉面",
+                    "色彩缤纷的水果拼盘",
+                    "诱人的巧克力蛋糕",
+                    "传统的中式点心",
+                    "意大利披萨特写",
+                    "法式甜点马卡龙",
+                    "新鲜的寿司组合"
+                ]
+            },
+            "建筑": {
+                icon: "🏛️",
+                prompts: [
+                    "古罗马斗兽场的宏伟景观",
+                    "现代主义风格的建筑",
+                    "中国古典园林建筑",
+                    "哥特式教堂的内部",
+                    "日本传统寺庙",
+                    "未来主义的摩天大楼",
+                    "地中海风格的白色房屋",
+                    "竹制的生态建筑"
+                ]
+            }
+        };
+
+        let copiedCount = 0;
+
+        function renderCategories(filter = '') {
+            const container = document.getElementById('categoriesContainer');
+            container.innerHTML = '';
+
+            let totalPrompts = 0;
+            let displayedCategories = 0;
+
+            Object.entries(promptTemplates).forEach(([category, data]) => {
+                const filteredPrompts = data.prompts.filter(prompt =>
+                    prompt.toLowerCase().includes(filter.toLowerCase())
+                );
+
+                if (filteredPrompts.length > 0 || filter === '') {
+                    displayedCategories++;
+                    totalPrompts += filter === '' ? data.prompts.length : filteredPrompts.length;
+
+                    const card = document.createElement('div');
+                    card.className = 'category-card';
+
+                    const header = document.createElement('div');
+                    header.className = 'category-header';
+                    header.innerHTML = `
+                        <span class="category-icon">${data.icon}</span>
+                        <h2 class="category-title">${category}</h2>
+                    `;
+
+                    const list = document.createElement('ul');
+                    list.className = 'prompt-list';
+
+                    const promptsToShow = filter === '' ? data.prompts : filteredPrompts;
+                    promptsToShow.forEach(prompt => {
+                        const item = document.createElement('li');
+                        item.className = 'prompt-item';
+                        item.textContent = prompt;
+                        item.onclick = () => copyPrompt(prompt);
+                        list.appendChild(item);
+                    });
+
+                    card.appendChild(header);
+                    card.appendChild(list);
+                    container.appendChild(card);
+                }
+            });
+
+            document.getElementById('totalPrompts').textContent = totalPrompts;
+            document.getElementById('totalCategories').textContent = displayedCategories;
+        }
+
+        function copyPrompt(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                copiedCount++;
+                document.getElementById('copiedCount').textContent = copiedCount;
+
+                const toast = document.getElementById('copyToast');
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 2000);
+
+                // 保存到 localStorage
+                localStorage.setItem('imagine2api_copied_count', copiedCount);
+            });
+        }
+
+        // 搜索功能
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            renderCategories(e.target.value);
+        });
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            renderCategories();
+
+            // 加载已复制次数
+            const savedCount = localStorage.getItem('imagine2api_copied_count');
+            if (savedCount) {
+                copiedCount = parseInt(savedCount);
+                document.getElementById('copiedCount').textContent = copiedCount;
+            }
+        });
+    </script>
+</body>
+</html>

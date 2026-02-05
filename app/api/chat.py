@@ -117,9 +117,12 @@ async def chat_completions(
     if settings.RELAY_ENABLED:
         logger.info("[Chat] 使用中转站模式")
 
+        # 将 ChatMessage 对象转换为字典
+        messages_dict = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+
         # 使用统一客户端（中转站模式）
         result = await unified_client.chat_completion(
-            messages=request.messages,
+            messages=messages_dict,
             model=request.model,
             stream=request.stream,
             n=request.n,
